@@ -1,0 +1,15 @@
+The kernel and modules are pre-compiled for now and live in src/boot and src/lib/modules/
+
+Examples of usage:
+
+Generate a root filesystem image:
+
+$ ./install.sh --root-image-path rootfs --root-image-size 1024*1024*200
+
+Install to a mounted root filesystem:
+
+$ ./install.sh --root-image-mnt rootfs
+
+Install everything to an SD card:
+
+$ ./install.sh --disk-image-path /dev/mmcblk0

@@ -1,0 +1,5 @@
+www-servers/nginx ~arm
+dev-lang/v8 ~arm
+net-libs/nodejs ~arm
+=sys-libs/rpi-userland-9999 ~arm
+www-apps/magnode ~arm
