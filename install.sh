@@ -49,6 +49,10 @@ getarg() {
 	esac
 }
 
+parse_size() {
+	echo $((0+$(echo "$1" | sed -e s/G/*1024*1024*1024/ -e s/M/*1024*1024/ -e s/k/*1024/)))
+}
+
 while (( "$#" )); do
 	case "$1" in
 		-?|-h|--help)
@@ -58,17 +62,17 @@ while (( "$#" )); do
 		--disk-image-path=*)
 			DISK_IMAGE_PATH="$(getarg $1)" ;;
 		--disk-image-size=*)
-			DISK_IMAGE_SIZE=$((0+$(getarg $1))) ;;
+			DISK_IMAGE_SIZE=$(parse_size $(getarg "$1")) ;;
 		--boot-image-path=*)
 			BOOT_IMAGE_PATH="$(getarg $1)" ;;
 		--boot-image-size=*)
-			BOOT_IMAGE_SIZE=$((0+$(getarg $1))) ;;
+			BOOT_IMAGE_SIZE=$(parse_size $(getarg "$1")) ;;
 		--boot-image-mnt=*)
 			BOOT_IMAGE_MNT="$(getarg $1)" ;;
 		--root-image-path=*)
 			ROOT_IMAGE_PATH="$(getarg $1)" ;;
 		--root-image-size=*)
-			ROOT_IMAGE_SIZE=$((0+$(getarg $1))) ;;
+			ROOT_IMAGE_SIZE=$(parse_size $(getarg "$1")) ;;
 		--root-image-mnt=*)
 			ROOT_IMAGE_MNT="$(getarg $1)" ;;
 		--pkgdir=*)
@@ -93,6 +97,19 @@ setup_loopback() {
 	echo $dev
 }
 
+write_image() {
+	touch "$1"
+	if [ -f "$1" ]; then
+		echo "Writing ${2}B image to $1"
+		dd if=/dev/zero of="$1" bs=4M count=$(expr $2 / 4194304)
+	elif [ -b "$1" ]; then
+		echo "Using block device at $1, ignoring size"
+	else
+		echo "ERROR: File at $1 not a file or block device"
+		exit 1
+	fi
+}
+
 MBR_SIZE=512
 
 prepare_disk_image() {
@@ -103,8 +120,8 @@ prepare_disk_image() {
 	ROOTFS_START=$(expr $BOOTFS_END + 1)
 	ROOTFS_END=$(expr $DISK_IMAGE_SIZE - 1)
 
-	#rm -f $DISK_IMAGE_PATH
-	test -f "$DISK_IMAGE_PATH" || dd if=/dev/zero of=$DISK_IMAGE_PATH bs=4M count=$(expr $DISK_IMAGE_SIZE / 4194304)
+	write_image "$DISK_IMAGE_PATH" $DISK_IMAGE_SIZE
+
 	parted $DISK_IMAGE_PATH -s -a minimal "mklabel msdos"
 	parted $DISK_IMAGE_PATH -s -a minimal "mkpart primary fat32 ${BOOTFS_START}B ${BOOTFS_END}B"
 	parted $DISK_IMAGE_PATH -s -a minimal "set 1 boot on"
@@ -202,12 +219,12 @@ if [ -n "$DISK_IMAGE_PATH" ]; then
 fi
 if [ -n "$BOOT_IMAGE_MNT" ]; then
 	[ -n "$BOOT_IMAGE_PATH" ] && echo "Boot image path: $BOOT_IMAGE_PATH"
-	echo "Boot image size: $BOOT_IMAGE_SIZE"
+	[ -n "$BOOT_IMAGE_PATH" ] && echo "Boot image size: $BOOT_IMAGE_SIZE"
 	echo "Boot image mountpoint: $BOOT_IMAGE_MNT"
 fi
 if [ -n "$ROOT_IMAGE_MNT" ]; then
 	[ -n "$ROOT_IMAGE_PATH" ] && echo "Root image path: $ROOT_IMAGE_PATH"
-	echo "Root image size: $ROOT_IMAGE_SIZE"
+	[ -n "$ROOT_IMAGE_PATH" ] && echo "Root image size: $ROOT_IMAGE_SIZE"
 	echo "Root image mountpoint: $ROOT_IMAGE_MNT"
 	echo "Package directory: $PKGDIR"
 fi
@@ -232,7 +249,8 @@ else
 fi
 
 if [ -n "$BOOT_IMAGE_PATH" ]; then
-	test -f "$BOOT_IMAGE_PATH" || dd if=/dev/zero of=$BOOT_IMAGE_PATH bs=4M count=$(expr $BOOT_IMAGE_SIZE / 4194304)
+	echo "Writing boot image"
+	write_image "$BOOT_IMAGE_PATH" $BOOT_IMAGE_SIZE
 fi
 
 if [ -n "$BOOT_IMAGE_MNT_DEVICE" ]; then
@@ -247,7 +265,8 @@ if [ -n "$BOOT_IMAGE_MNT" ]; then
 fi
 
 if [ -n "$ROOT_IMAGE_PATH" ]; then
-	test -f "$ROOT_IMAGE_PATH" || dd if=/dev/zero of=$ROOT_IMAGE_PATH bs=4M count=$(expr $ROOT_IMAGE_SIZE / 4194304)
+	echo "Writing root image"
+	write_image "$ROOT_IMAGE_PATH" $ROOT_IMAGE_SIZE
 fi
 
 if [ -n "$ROOT_IMAGE_MNT_DEVICE" ]; then
@@ -269,14 +288,14 @@ if [ -n "$ROOT_IMAGE_MNT" ]; then
 	mknod "$ROOT_IMAGE_MNT/dev/null" c 1 3
 	mknod "$ROOT_IMAGE_MNT/dev/zero" c 1 5
 	echo Merge sys-apps/baselayout
-	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps baselayout
+	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps baselayout || exit 2
 	# Mark news as read
 	cat $ROOT_IMAGE_MNT/var/lib/gentoo/news/news-gentoo.unread >> $ROOT_IMAGE_MNT/var/lib/gentoo/news/news-gentoo.read
 	cat /dev/null > $ROOT_IMAGE_MNT/var/lib/gentoo/news/news-gentoo.read
 	#pause
 	sed -i -e 's/^#en_US.UTF-8 UTF-8$/en_US.UTF-8 UTF-8/' $ROOT_IMAGE_MNT/etc/locale.gen
 	echo Merge @system
-	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps @system
+	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps @system || exit 2
 	echo Merge $PACKAGES
-	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps $PACKAGES
+	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps $PACKAGES || exit 2
 fi
