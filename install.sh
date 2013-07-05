@@ -21,6 +21,7 @@ print_help() {
 	echo "    --root-image-size=<bytes>  Set size of output image, if necessary"
 	echo "    --root-image-mnt=<dir>     Location of existing filesystem to install root files to"
 	echo "    --pkgdir=<dir>             Location of cache for binary packages"
+	echo "    --package-list=<file>      Install a list of packages from a file (blank for none, default: src/world)"
 	echo "    --package=<name>           Install a package (in addition to others)"
 }
 
@@ -38,7 +39,8 @@ DISK_IMAGE_PATH=
 DISK_IMAGE_SIZE=
 PKGDIR=$PKGDIR
 PKGDIR_DEFAULT=packages
-PACKAGES=$(cat src/world)
+PACKAGE_LIST=src/world
+PACKAGES=
 
 getarg() {
 	case "$1" in
@@ -79,6 +81,8 @@ while (( "$#" )); do
 			PKGDIR="$(getarg $1)" ;;
 		--package=*)
 			PACKAGES="$PACKAGES $(getarg $1)" ;;
+		--package-list=*)
+			PACKAGE_LIST="$(getarg $1)" ;;
 		*)
 			echo "Unknown argument $1"
 			exit
@@ -294,8 +298,6 @@ if [ -n "$ROOT_IMAGE_MNT" ]; then
 	cat /dev/null > $ROOT_IMAGE_MNT/var/lib/gentoo/news/news-gentoo.read
 	#pause
 	sed -i -e 's/^#en_US.UTF-8 UTF-8$/en_US.UTF-8 UTF-8/' $ROOT_IMAGE_MNT/etc/locale.gen
-	echo Merge @system
-	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps @system || exit 2
 	echo Merge $PACKAGES
-	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps $PACKAGES || exit 2
+	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps $(test -n "$PACKAGE_LIST" && cat "$PACKAGE_LIST") $PACKAGES || exit 2
 fi
