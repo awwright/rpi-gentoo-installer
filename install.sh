@@ -1,12 +1,5 @@
 #!/bin/sh
 
-for b in dd parted emerge rsync; do
-	if ! type $b &>/dev/null; then
-		echo "Command not found: $b" >&2
-		exit 1
-	fi
-done
-
 print_help() {
 	echo "Usage: $0 [options]"
 	echo "Options:"
@@ -85,10 +78,18 @@ while (( "$#" )); do
 			PACKAGE_LIST="$(getarg $1)" ;;
 		*)
 			echo "Unknown argument $1"
+			echo "For an argument list, try: $0 --help"
 			exit
 			;;
 	esac
 	shift
+done
+
+for b in dd parted emerge rsync; do
+	if ! type $b &>/dev/null; then
+		echo "Command not found: $b" >&2
+		exit 1
+	fi
 done
 
 setup_loopback() {
