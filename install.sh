@@ -284,17 +284,17 @@ fi
 
 if [ -n "$ROOT_IMAGE_MNT" ]; then
 	echo 'Installing system'
-	mkdir -pv $ROOT_IMAGE_MNT/etc/portage/
+	mkdir -pv "$ROOT_IMAGE_MNT"/{boot,dev,etc/portage,mnt,opt,proc,sys}
 	ln -svf /usr/portage/profiles/default/linux/arm/13.0/armv6j $ROOT_IMAGE_MNT/etc/portage/make.profile
 	cp -av /etc/portage/make.conf $ROOT_IMAGE_MNT/etc/portage/make.conf
 	rsync -av src/overlay/ "$ROOT_IMAGE_MNT"
-	mkdir -pv "$ROOT_IMAGE_MNT/dev"
 	mknod "$ROOT_IMAGE_MNT/dev/console" c 5 1
 	mknod "$ROOT_IMAGE_MNT/dev/null" c 1 3
 	mknod "$ROOT_IMAGE_MNT/dev/zero" c 1 5
 	echo Merge sys-apps/baselayout
 	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" FEATURES="-news" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps baselayout || exit 2
 	sed -i -e 's/^#en_US.UTF-8 UTF-8$/en_US.UTF-8 UTF-8/' $ROOT_IMAGE_MNT/etc/locale.gen
+	# TODO: Here we want to install libgcc_s.so and friends
 	echo Merge $PACKAGES
 	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" FEATURES="-news" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps $(test -n "$PACKAGE_LIST" && cat "$PACKAGE_LIST") $PACKAGES || exit 2
 fi
