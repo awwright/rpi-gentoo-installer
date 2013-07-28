@@ -1,3 +1,4 @@
+sys-devel/gcc
 app-admin/sudo
 app-admin/syslog-ng
 app-editors/nano

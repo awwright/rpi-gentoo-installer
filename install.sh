@@ -85,7 +85,7 @@ while (( "$#" )); do
 	shift
 done
 
-for b in dd parted emerge rsync; do
+for b in dd parted emerge rsync mkfs.ext4dev mkfs.vfat; do
 	if ! type $b &>/dev/null; then
 		echo "Command not found: $b" >&2
 		exit 1
@@ -121,7 +121,7 @@ prepare_disk_image() {
 	echo "Preparing disk image..."
 
 	BOOTFS_START=$MBR_SIZE
-	BOOTFS_END=$(expr $BOOTFS_START + $BOOTFS_SIZE - 1)
+	BOOTFS_END=$(expr $BOOTFS_START + $BOOT_IMAGE_SIZE - 1)
 	ROOTFS_START=$(expr $BOOTFS_END + 1)
 	ROOTFS_END=$(expr $DISK_IMAGE_SIZE - 1)
 
@@ -151,10 +151,10 @@ fill_in_arguments() {
 	fi
 
 	# Set defaults if not set by the user
-	if [ -z "$BOOT_IMAGE_MNT" -a -n "$BOOT_IMAGE_PATH" ]; then
+	if [ -z "$BOOT_IMAGE_MNT" -a '(' -n "$BOOT_IMAGE_PATH" -o -n "$DISK_IMAGE_PATH" ')' ]; then
 		BOOT_IMAGE_MNT="$BOOT_IMAGE_MNT_DEFAULT"
 	fi
-	if [ -z "$ROOT_IMAGE_MNT" -a -n "$ROOT_IMAGE_PATH" ]; then
+	if [ -z "$ROOT_IMAGE_MNT" -a '(' -n "$ROOT_IMAGE_PATH" -o -n "$DISK_IMAGE_PATH" ')' ]; then
 		ROOT_IMAGE_MNT="$ROOT_IMAGE_MNT_DEFAULT"
 	fi
 	if [ -z "$PKGDIR" ]; then
@@ -163,6 +163,10 @@ fill_in_arguments() {
 
 	if [ -n "$BOOT_IMAGE_PATH" -a -n "$ROOT_IMAGE_PATH" ]; then
 		BOOT_IMAGE_SIZE=$((48*1024*1024))
+	fi
+
+	if [ -z "$BOOT_IMAGE_SIZE" ]; then
+		BOOT_IMAGE_SIZE=$(parse_size 40M)
 	fi
 }
 
@@ -260,8 +264,8 @@ fi
 
 if [ -n "$BOOT_IMAGE_MNT_DEVICE" ]; then
 	echo 'Mounting boot'
-	mkfs.vfat -n boot -f 2 -F 32 $BOOT_IMAGE_PATH
-	mount "$BOOT_IMAGE_PATH" -o loop,noatime "$BOOT_IMAGE_MNT"
+	mkfs.vfat -n boot -f 2 -F 32 "$BOOT_IMAGE_MNT_DEVICE"
+	mount "$BOOT_IMAGE_MNT_DEVICE" -o loop,noatime "$BOOT_IMAGE_MNT"
 fi
 
 if [ -n "$BOOT_IMAGE_MNT" ]; then
@@ -275,11 +279,12 @@ if [ -n "$ROOT_IMAGE_PATH" ]; then
 fi
 
 if [ -n "$ROOT_IMAGE_MNT_DEVICE" ]; then
-	echo 'Mounting device root filesystem'
+	echo "Mounting device root filesystem device=$ROOT_IMAGE_MNT_DEVICE mount=$ROOT_IMAGE_MNT"
 	umount $ROOT_IMAGE_MNT
-	test -f "$ROOT_IMAGE_PATH" || ROOT_IMAGE_PATH
-	mkfs.ext4dev -F -L rootfs -M / $ROOT_IMAGE_PATH
-	mount "$ROOT_IMAGE_PATH" "$ROOT_IMAGE_MNT" || exit
+	# What does this do again?
+	# test -f "$ROOT_IMAGE_MNT_DEVICE" || ROOT_IMAGE_MNT_DEVICE
+	mkfs.ext4dev -F -L rootfs -M / $ROOT_IMAGE_MNT_DEVICE
+	mount "$ROOT_IMAGE_MNT_DEVICE" "$ROOT_IMAGE_MNT" || exit
 fi
 
 if [ -n "$ROOT_IMAGE_MNT" ]; then
@@ -292,9 +297,9 @@ if [ -n "$ROOT_IMAGE_MNT" ]; then
 	mknod "$ROOT_IMAGE_MNT/dev/null" c 1 3
 	mknod "$ROOT_IMAGE_MNT/dev/zero" c 1 5
 	echo Merge sys-apps/baselayout
-	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" FEATURES="-news" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps baselayout || exit 2
+	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" FEATURES="-news" emerge --buildpkg --usepkg --getbinpkg=n --jobs=1 --root-deps=rdeps baselayout || exit 2
 	sed -i -e 's/^#en_US.UTF-8 UTF-8$/en_US.UTF-8 UTF-8/' $ROOT_IMAGE_MNT/etc/locale.gen
 	# TODO: Here we want to install libgcc_s.so and friends
 	echo Merge $PACKAGES
-	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" FEATURES="-news" emerge --buildpkg --usepkg --jobs=1 --root-deps=rdeps $(test -n "$PACKAGE_LIST" && cat "$PACKAGE_LIST") $PACKAGES || exit 2
+	env ROOT="$ROOT_IMAGE_MNT" PORTAGE_CONFIGROOT="$ROOT_IMAGE_MNT" PKGDIR="$PKGDIR" FEATURES="-news" emerge --buildpkg --usepkg --getbinpkg=n --jobs=1 --root-deps=rdeps $(test -n "$PACKAGE_LIST" && cat "$PACKAGE_LIST") $PACKAGES || exit 2
 fi
